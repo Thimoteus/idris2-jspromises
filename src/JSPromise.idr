@@ -48,14 +48,14 @@ ifErr = prim__exists True False . toJsPtr
 prim__new : ((JsPtr -> IO ()) -> (Rejection -> IO ()) -> IO ()) -> PrimIO (Promise JsPtr)
 
 export
-new : {0 flatten : Flatten a b} -> Executor a -> IO (Promise b)
+new : {auto 0 flatten : Flatten a b} -> Executor a -> IO (Promise b)
 new = map fromJsPtrP . primIO . prim__new . \k, onPtr => k (onPtr . toJsPtr)
 
 %foreign "javascript:lambda:(k, p) => p.then(k)"
 prim__then : (JsPtr -> IO (Promise JsPtr)) -> Promise JsPtr -> PrimIO (Promise JsPtr)
 
 export
-then_ : {0 flatten: Flatten b c} -> (a -> IO (Promise b)) -> Promise a -> IO (Promise c)
+then_ : {auto 0 flatten: Flatten b c} -> (a -> IO (Promise b)) -> Promise a -> IO (Promise c)
 then_ k pa = fromJsPtrP <$> primIO (prim__then (\ptr => toJsPtrP <$> k (fromJsPtr ptr)) (toJsPtrP pa))
 
 %foreign "javascript:lambda:(k, p) => p.catch(k)"
@@ -76,7 +76,7 @@ finally mu pa = fromJsPtrP <$> primIO (prim__finally (\_ => mu) (toJsPtrP pa))
 prim__resolve : JsPtr -> Promise JsPtr
 
 export
-resolve : {0 flatten : Flatten a b} -> a -> Promise b
+resolve : {auto 0 flatten : Flatten a b} -> a -> Promise b
 resolve = fromJsPtrP . prim__resolve . toJsPtr
 
 namespace Lazy
@@ -90,7 +90,7 @@ namespace Lazy
   (>>=) : LazyPromise a -> (a -> LazyPromise b) -> LazyPromise b
   (MkLazyPromise pbioa) >>= k = MkLazyPromise $ do
     pba <- pbioa
-    then_ {flatten = FlattenId} (\(MkBox a) => let (MkLazyPromise b) := k a in b) pba
+    then_ (\(MkBox a) => let (MkLazyPromise b) := k a in b) pba
 
   mutual
     Functor LazyPromise where
@@ -99,7 +99,7 @@ namespace Lazy
         pure (f a)
 
     Applicative LazyPromise where
-      pure = MkLazyPromise . pure . resolve {flatten = FlattenId} . MkBox
+      pure = MkLazyPromise . pure . resolve . MkBox
       pf <*> pa = do
         f <- pf
         a <- pa
@@ -108,8 +108,8 @@ namespace Lazy
     Monad LazyPromise where
       (MkLazyPromise pbioa) >>= k = MkLazyPromise $ do
         pba <- pbioa
-        then_ {flatten = FlattenId} (\(MkBox a) => let (MkLazyPromise b) := k a in b) pba
+        then_ (\(MkBox a) => let (MkLazyPromise b) := k a in b) pba
       join pa = pa >>= id
 
   HasIO LazyPromise where
-    liftIO = MkLazyPromise . map (resolve {flatten = FlattenId} . MkBox)
+    liftIO = MkLazyPromise . map (resolve . MkBox)
