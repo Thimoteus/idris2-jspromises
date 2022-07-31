@@ -1,11 +1,14 @@
 module JSPromise
 
+||| The type of JS promises parameterized by the value they return.
 export
 data Promise : Type -> Type where [external]
 
+||| The error type of a promise. Use `ifErr` to check if it exists.
 export
 data Rejection : Type where [external]
 
+||| Data type used to handle promise semantics that disallow types of Promise (Promise a) to exist.
 public export
 data Flatten : Type -> Type -> Type where
   FlattenId : Flatten a a
@@ -25,6 +28,7 @@ toJsPtrP = believe_me
 fromJsPtrP : Promise JsPtr -> Promise a
 fromJsPtrP = believe_me
 
+||| Used to create a new promise given success and error callbacks.
 public export
 Executor : Type -> Type
 Executor a = (a -> IO ()) -> (Rejection -> IO ()) -> IO ()
@@ -40,6 +44,7 @@ javascript:lambda:(t, f, x) => {
 """
 prim__exists : Bool -> Bool -> JsPtr -> Bool
 
+||| Used to check whether a Rejection exists.
 export
 ifErr : Rejection -> Bool
 ifErr = prim__exists True False . toJsPtr
@@ -54,6 +59,7 @@ new = map fromJsPtrP . primIO . prim__new . \k, onPtr => k (onPtr . toJsPtr)
 %foreign "javascript:lambda:(k, p) => p.then(k)"
 prim__then : (JsPtr -> IO (Promise JsPtr)) -> Promise JsPtr -> PrimIO (Promise JsPtr)
 
+||| Used to chain promises together, similar to the bind operator (>>=).
 export
 then_ : {auto 0 flatten: Flatten b c} -> (a -> IO (Promise b)) -> Promise a -> IO (Promise c)
 then_ k pa = fromJsPtrP <$> primIO (prim__then (\ptr => toJsPtrP <$> k (fromJsPtr ptr)) (toJsPtrP pa))
@@ -69,6 +75,7 @@ thenOrCatch onSucc onErr pa =
 %foreign "javascript:lambda:(k, p) => p.catch(k)"
 prim__catch : (Rejection -> IO (Promise JsPtr)) -> Promise JsPtr -> PrimIO (Promise JsPtr)
 
+||| Handle a Rejection to make sure it doesn't throw.
 export
 catch : (Rejection -> IO (Promise b)) -> Promise a -> IO (Promise b)
 catch k pa = fromJsPtrP <$> primIO (prim__catch (map toJsPtrP . k) (toJsPtrP pa))
@@ -141,8 +148,10 @@ namespace Lazy
 
   export
   fromPromise : IO (Promise a) -> LazyPromise a
-  fromPromise p = MkLazyPromise $ then_ {flatten = FlattenId} (pure . resolve . MkBox) =<< p
+  fromPromise p =
+    MkLazyPromise $ then_ {flatten = FlattenId} (pure . resolve . MkBox) =<< p
 
   export
   toPromise : {auto 0 flatten : Flatten a b} -> LazyPromise a -> IO (Promise b)
-  toPromise {flatten} (MkLazyPromise lpa) = then_ {flatten = flatten} (\(MkBox b) => pure (resolve b)) =<< lpa
+  toPromise {flatten} (MkLazyPromise lpa) =
+    then_ {flatten = flatten} (\(MkBox b) => pure (resolve b)) =<< lpa
