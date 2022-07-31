@@ -58,6 +58,14 @@ export
 then_ : {auto 0 flatten: Flatten b c} -> (a -> IO (Promise b)) -> Promise a -> IO (Promise c)
 then_ k pa = fromJsPtrP <$> primIO (prim__then (\ptr => toJsPtrP <$> k (fromJsPtr ptr)) (toJsPtrP pa))
 
+%foreign "javascript:lambda:(k, c, p) => p.then(k, c)"
+prim__thenOrCatch : (JsPtr -> IO (Promise JsPtr)) -> (Rejection -> IO (Promise JsPtr)) -> Promise JsPtr -> PrimIO (Promise JsPtr)
+
+export
+thenOrCatch : {auto 0 flatten: Flatten b c} -> (a -> IO (Promise b)) -> (Rejection -> IO (Promise b)) -> Promise a -> IO (Promise c)
+thenOrCatch onSucc onErr pa =
+  fromJsPtrP <$> primIO (prim__thenOrCatch (map toJsPtrP . onSucc . fromJsPtr) (map toJsPtrP . onErr) (toJsPtrP pa))
+
 %foreign "javascript:lambda:(k, p) => p.catch(k)"
 prim__catch : (Rejection -> IO (Promise JsPtr)) -> Promise JsPtr -> PrimIO (Promise JsPtr)
 
