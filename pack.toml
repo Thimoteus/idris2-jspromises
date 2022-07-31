@@ -1,0 +1,9 @@
+[custom.all.jspromises]
+type = "local"
+path = "/home/evante/Programming/idris/promises"
+ipkg = "jspromises.ipkg"
+
+[custom.all.jspromises-test]
+type = "local"
+path = "test"
+ipkg = "test.ipkg"
