@@ -87,11 +87,6 @@ namespace Lazy
   data LazyPromise : Type -> Type where
     MkLazyPromise : IO (Promise (Box a)) -> LazyPromise a
 
-  (>>=) : LazyPromise a -> (a -> LazyPromise b) -> LazyPromise b
-  (MkLazyPromise pbioa) >>= k = MkLazyPromise $ do
-    pba <- pbioa
-    then_ (\(MkBox a) => let (MkLazyPromise b) := k a in b) pba
-
   mutual
     Functor LazyPromise where
       map f pa = do
@@ -109,7 +104,32 @@ namespace Lazy
       (MkLazyPromise pbioa) >>= k = MkLazyPromise $ do
         pba <- pbioa
         then_ (\(MkBox a) => let (MkLazyPromise b) := k a in b) pba
-      join pa = pa >>= id
 
   HasIO LazyPromise where
     liftIO = MkLazyPromise . map (resolve . MkBox)
+
+  new : Executor a -> LazyPromise a
+  new k = MkLazyPromise $ JSPromise.new $ \onSucc, onErr => k (onSucc . MkBox) onErr
+
+  catch : (Rejection -> LazyPromise b) -> LazyPromise a -> LazyPromise b
+  catch onErr (MkLazyPromise pa) =
+    MkLazyPromise $ do
+      a <- pa
+      JSPromise.catch (\err => let (MkLazyPromise pb) := onErr err in pb) a
+
+  finally : LazyPromise () -> LazyPromise a -> LazyPromise a
+  finally (MkLazyPromise pu) (MkLazyPromise pa) =
+    MkLazyPromise $ do
+      a <- pa
+      JSPromise.finally finalize a
+    where
+      finalize : IO (Promise ())
+      finalize = do
+        u <- pu
+        JSPromise.then_ {flatten = FlattenId} (\(MkBox unit) => pure (JSPromise.resolve unit)) u
+
+  fromPromise : IO (Promise a) -> LazyPromise a
+  fromPromise p = MkLazyPromise $ then_ {flatten = FlattenId} (pure . resolve . MkBox) =<< p
+
+  toPromise : {auto 0 flatten : Flatten a b} -> LazyPromise a -> IO (Promise b)
+  toPromise {flatten} (MkLazyPromise lpa) = then_ {flatten = flatten} (\(MkBox b) => pure (resolve b)) =<< lpa
