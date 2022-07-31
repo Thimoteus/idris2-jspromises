@@ -116,15 +116,18 @@ namespace Lazy
   HasIO LazyPromise where
     liftIO = MkLazyPromise . map (resolve . MkBox)
 
+  export
   new : Executor a -> LazyPromise a
   new k = MkLazyPromise $ JSPromise.new $ \onSucc, onErr => k (onSucc . MkBox) onErr
 
+  export
   catch : (Rejection -> LazyPromise b) -> LazyPromise a -> LazyPromise b
   catch onErr (MkLazyPromise pa) =
     MkLazyPromise $ do
       a <- pa
       JSPromise.catch (\err => let (MkLazyPromise pb) := onErr err in pb) a
 
+  export
   finally : LazyPromise () -> LazyPromise a -> LazyPromise a
   finally (MkLazyPromise pu) (MkLazyPromise pa) =
     MkLazyPromise $ do
@@ -136,8 +139,10 @@ namespace Lazy
         u <- pu
         JSPromise.then_ {flatten = FlattenId} (\(MkBox unit) => pure (JSPromise.resolve unit)) u
 
+  export
   fromPromise : IO (Promise a) -> LazyPromise a
   fromPromise p = MkLazyPromise $ then_ {flatten = FlattenId} (pure . resolve . MkBox) =<< p
 
+  export
   toPromise : {auto 0 flatten : Flatten a b} -> LazyPromise a -> IO (Promise b)
   toPromise {flatten} (MkLazyPromise lpa) = then_ {flatten = flatten} (\(MkBox b) => pure (resolve b)) =<< lpa
