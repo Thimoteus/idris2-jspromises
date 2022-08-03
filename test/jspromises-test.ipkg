@@ -22,7 +22,7 @@ modules = Main
 main = Main
 
 -- name of executable
--- executable =
+executable = "jspromises-test"
 opts = "--cg javascript"
 sourcedir = "src"
 -- builddir =

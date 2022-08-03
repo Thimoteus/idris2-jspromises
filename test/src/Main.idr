@@ -2,20 +2,56 @@ module Main
 
 import JSPromise
 
-myProm : Promise Int
-myProm = resolve {flatten = FlattenId} 5
+data Array : Type -> Type where [external]
+%name Array xs, ys, zs
 
-promUnit : Promise ()
-promUnit = resolve {flatten = FlattenId} ()
+%foreign """
+javascript:lambda:(_, xs, k) => {
+  for (const x of xs) {
+    k(x)();
+  }
+}
+"""
+prim__arrayFor : Array a -> (a -> PrimIO()) -> PrimIO ()
+
+arrayFor_: Array a -> (a -> IO ()) -> IO ()
+arrayFor_ xs f = primIO (prim__arrayFor xs (\x => toPrim (f x)))
+
+%foreign "javascript:lambda:(str) => require('node:fs/promises').readdir(str)"
+prim__readdir : String -> PrimIO (Promise (Array String))
+
+readdir : String -> IO (Promise (Array String))
+readdir str = primIO (prim__readdir str)
+
+readdirL : String -> LazyPromise (Array String)
+readdirL str = fromPromise (readdir str)
+
+myPromProgL : LazyPromise ()
+myPromProgL = do
+  pfs <- readdirL "./"
+  liftIO $ putStr "reading complete"
+  liftIO $ arrayFor_ pfs $ \file => putStr file
 
 myPromProg : IO (Promise ())
-myPromProg = then_ {flatten = FlattenId} go myProm
+myPromProg = then_ {flatten = FlattenId} k x
   where
-    go : Int -> IO (Promise ())
-    go n = do
-      putStrLn $ show n
-      pure promUnit
+    k : String -> IO (Promise ())
+    k y = do
+      putStr $ y ++ " = five"
+      pure $ resolve ()
+    x : Promise String
+    x = resolve "5"
+
+noProms : LazyPromise ()
+noProms = do
+  putStrLn "Hello"
+  putStrLn "I am"
+  putStrLn "printing"
 
 main : IO ()
 main = do
-  putStrLn "Hi!"
+  ignore $ run $ do
+    noProms
+    myPromProgL
+  _ <- myPromProg
+  pure ()
