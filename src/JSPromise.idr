@@ -29,16 +29,11 @@ toJsPtrP = believe_me
 fromJsPtrP : Promise JsPtr -> Promise a
 fromJsPtrP = believe_me
 
-||| Used to create a new promise given success and error callbacks.
-public export
-Executor : Type -> Type
-Executor a = (a -> IO ()) -> (Rejection -> IO ()) -> IO ()
+travLP : List (Promise a) -> List (Promise JsPtr)
+travLP = believe_me
 
-toPrimIOFn : (c -> a) -> (a -> IO (Promise b)) -> (c -> PrimIO (Promise JsPtr))
-toPrimIOFn f k ptr = toPrim $ toJsPtrP <$> k (f ptr)
-
-fromPrimIOFn : (a -> c) -> (c -> PrimIO ()) -> (a -> IO ())
-fromPrimIOFn f k x = primIO $ k (f x)
+travPL : Promise (List JsPtr) -> Promise (List a)
+travPL = believe_me
 
 %foreign """
 javascript:lambda:(t, f, x) => {
@@ -51,23 +46,52 @@ javascript:lambda:(t, f, x) => {
 """
 prim__exists : Bool -> Bool -> JsPtr -> Bool
 
-||| Used to check whether a Rejection exists.
-export
-ifErr : Rejection -> Bool
-ifErr = prim__exists True False . toJsPtr
-
 %foreign "javascript:lambda:k => new Promise((s, e) => k(s, e)())"
 prim__new : ((JsPtr -> PrimIO ()) -> (Rejection -> PrimIO ()) -> PrimIO ()) -> PrimIO (Promise JsPtr)
-
-export
-new : {auto 0 flatten : Flatten a b} -> Executor a -> IO (Promise b)
-new f =
-  map fromJsPtrP $ primIO $ prim__new $ \onSucc, onErr => toPrim (f (fromPrimIOFn toJsPtr onSucc) (fromPrimIOFn id onErr))
 
 %foreign """
 javascript:lambda:(k, p) => p.then((x) => k(x)())
 """
 prim__then : (JsPtr -> PrimIO (Promise JsPtr)) -> Promise JsPtr -> PrimIO (Promise JsPtr)
+
+%foreign "javascript:lambda:(k, p) => p.catch(e => k(e)())"
+prim__catch : (Rejection -> PrimIO (Promise JsPtr)) -> Promise JsPtr -> PrimIO (Promise JsPtr)
+
+%foreign "javascript:lambda:(k, c, p) => p.then(x => k(x)(), e => c(e)())"
+prim__thenOrCatch : (JsPtr -> PrimIO (Promise JsPtr)) -> (Rejection -> PrimIO (Promise JsPtr)) -> Promise JsPtr -> PrimIO (Promise JsPtr)
+
+%foreign "javascript:lambda:(k, p) => p.finally(k)"
+prim__finally : (PrimIO (Promise ())) -> Promise JsPtr -> PrimIO (Promise JsPtr)
+
+%foreign "javascript:lambda:(a) => Promise.resolve(a)"
+prim__resolve : JsPtr -> Promise JsPtr
+
+%foreign "javascript:lambda:(ps) => Promise.all(__prim_idris2js_array(ps)).then(xs) => __prim_js2idris_array(xs)"
+prim__all : List (Promise JsPtr) -> PrimIO (Promise (List JsPtr))
+
+%foreign "javascript:lambda:(ps) => Promise.race(__prim_idris2js_array(ps))"
+prim__race : List (Promise JsPtr) -> PrimIO (Promise JsPtr)
+
+||| Used to create a new promise given success and error callbacks.
+public export
+Executor : Type -> Type
+Executor a = (a -> IO ()) -> (Rejection -> IO ()) -> IO ()
+
+toPrimIOFn : (c -> a) -> (a -> IO (Promise b)) -> (c -> PrimIO (Promise JsPtr))
+toPrimIOFn f k ptr = toPrim $ toJsPtrP <$> k (f ptr)
+
+fromPrimIOFn : (a -> c) -> (c -> PrimIO ()) -> (a -> IO ())
+fromPrimIOFn f k x = primIO $ k (f x)
+
+||| Used to check whether a Rejection exists.
+export
+ifErr : Rejection -> Bool
+ifErr = prim__exists True False . toJsPtr
+
+export
+new : {auto 0 flatten : Flatten a b} -> Executor a -> IO (Promise b)
+new f =
+  map fromJsPtrP $ primIO $ prim__new $ \onSucc, onErr => toPrim (f (fromPrimIOFn toJsPtr onSucc) (fromPrimIOFn id onErr))
 
 ||| Used to chain promises together, similar to the bind operator (>>=).
 export
@@ -75,41 +99,37 @@ then_ : {auto 0 flatten: Flatten b c} -> (a -> IO (Promise b)) -> Promise a -> I
 then_ f pa =
   map fromJsPtrP $ primIO $ prim__then (toPrimIOFn fromJsPtr f) (toJsPtrP pa)
 
-%foreign "javascript:lambda:(k, p) => p.catch(e => k(e)())"
-prim__catch : (Rejection -> PrimIO (Promise JsPtr)) -> Promise JsPtr -> PrimIO (Promise JsPtr)
-
 ||| Handle a Rejection to make sure it doesn't throw.
 export
 catch : (Rejection -> IO (Promise b)) -> Promise a -> IO (Promise b)
 catch f pa = do
   map fromJsPtrP $ primIO $ prim__catch (toPrimIOFn id f) (toJsPtrP pa)
 
-%foreign "javascript:lambda:(k, c, p) => p.then(x => k(x)(), e => c(e)())"
-prim__thenOrCatch : (JsPtr -> PrimIO (Promise JsPtr)) -> (Rejection -> PrimIO (Promise JsPtr)) -> Promise JsPtr -> PrimIO (Promise JsPtr)
-
 export
 thenOrCatch : {auto 0 flatten: Flatten b c} -> (a -> IO (Promise b)) -> (Rejection -> IO (Promise b)) -> Promise a -> IO (Promise c)
 thenOrCatch f g pa = map fromJsPtrP $ primIO $ prim__thenOrCatch (toPrimIOFn fromJsPtr f) (toPrimIOFn id g) (toJsPtrP pa)
-
-%foreign "javascript:lambda:(k, p) => p.finally(k)"
-prim__finally : (PrimIO (Promise ())) -> Promise JsPtr -> PrimIO (Promise JsPtr)
 
 export
 finally : IO (Promise ()) -> Promise a -> IO (Promise a)
 finally x pa = map fromJsPtrP $ primIO $ prim__finally (toPrim x) (toJsPtrP pa)
 
-%foreign "javascript:lambda:(a) => Promise.resolve(a)"
-prim__resolve : JsPtr -> Promise JsPtr
-
 export
 resolve : {auto 0 flatten : Flatten a b} -> a -> Promise b
 resolve = fromJsPtrP . prim__resolve . toJsPtr
+
+export
+all : List (Promise a) -> IO (Promise (List a))
+all pas = map travPL $ primIO $ prim__all $ travLP pas
+
+export
+race : List (Promise a) -> IO (Promise a)
+race pas = map fromJsPtrP $ primIO $ prim__race $ travLP pas
 
 namespace Lazy
   public export
   data Box a = MkBox a
 
-  export
+  public export
   unbox : Box a -> a
   unbox (MkBox x) = x
 
@@ -176,6 +196,14 @@ namespace Lazy
   toPromise : {auto 0 flatten : Flatten a b} -> LazyPromise a -> IO (Promise b)
   toPromise {flatten} (MkLazyPromise lpa) =
     then_ {flatten = flatten} (\(MkBox b) => pure (resolve b)) =<< lpa
+
+  export
+  all : List (LazyPromise a) -> LazyPromise (List a)
+  all xs = fromPromise . all =<< liftIO (traverse (toPromise {flatten = FlattenId}) xs)
+
+  export
+  race : List (LazyPromise a) -> LazyPromise a
+  race xs = fromPromise . race =<< liftIO (traverse (toPromise {flatten = FlattenId}) xs)
 
   export
   run : LazyPromise a -> IO (Promise (Box a))
